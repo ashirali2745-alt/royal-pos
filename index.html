@@ -3,6 +3,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f766e"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>Royal POS</title>
+<!--
+  Royal POS — Offline (Fixed 2026-11-16)
+  FIX: "Uncaught TypeError: list is not a function"
+  Wajah: browser me <div id="list">, <div id="bar"> aur <div id="toast">
+  ka naam function list(), bar(), toast() se takra raha tha.
+  Is liye functions aur ids ke naam badal diye gaye hain:
+    list() -> renderList(),  id="list" -> id="plist"
+    bar()  -> updateCartBar(), id="bar" -> id="cartBar"
+    id="toast" -> id="toastBox" (function toast() waisa hi hai)
+    id="t" -> id="shopTitle",  id="tt" -> id="totalEl"
+  IMEI ab 15 YA 16 digits dono chalta hai (pehle sirf 15 tha).
+  Data sirf is phone/browser ke localStorage me save hota hai — offline chalta hai.
+  GitHub Pages / Netlify / Vercel par sirf ye ek file upload karni hai.
+-->
 <style>
 :root{color-scheme:light dark;--bg:#f2f5f4;--cd:#fff;--tx:#14201d;--mu:#66726e;--pr:#0f766e;--on:#fff;--bd:#dce3e0;--bad:#c0392b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1514;--cd:#18211f;--tx:#e8efed;--mu:#9aa9a5;--pr:#2dd4bf;--on:#06201c;--bd:#2a3633;--bad:#f0877a;color-scheme:dark}}
@@ -18,7 +32,7 @@ h1{font-size:18px;margin:0}
 .seg button{flex:1;border:0;background:none;color:inherit;padding:8px;border-radius:8px;font:inherit;font-size:14px}
 .seg .on{background:var(--cd);color:var(--tx);font-weight:600}
 #v{flex:1;overflow:auto;padding:12px}
-#bar{display:none;padding:0 12px;background:var(--bg)}
+#cartBar{display:none;padding:0 12px;background:var(--bg)}
 nav{display:flex;border-top:1px solid var(--bd);background:var(--cd)}
 nav button{flex:1;border:0;background:none;padding:8px 0;color:var(--mu);font:inherit;font-size:12px}
 nav .on{color:var(--pr);font-weight:700}
@@ -39,101 +53,137 @@ small{display:block;color:var(--mu);font-size:12px;margin-top:2px}
 .rc{background:var(--cd);border:1px dashed var(--bd);border-radius:12px;padding:14px}
 .rc h3{text-align:center}.rc hr{border:0;border-top:1px dashed var(--bd)}
 .sum{background:var(--cd);border:1px solid var(--bd);border-radius:12px;padding:12px;text-align:center}
-#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90%;text-align:center}
+#toastBox{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:40;max-width:90%;text-align:center}
+#lk{display:none;position:fixed;inset:0;z-index:30;background:var(--bg);padding:calc(24px + env(safe-area-inset-top,0px)) 24px 24px;flex-direction:column;justify-content:center}#lk h2{margin:0 0 8px}
 </style></head>
 <body>
-<header><div class="top"><h1 id="t"></h1><button class="g" onclick="cfg()" aria-label="Settings">⚙</button></div>
+<header><div class="top"><h1 id="shopTitle"></h1><span><button class="g" onclick="lock()" aria-label="Lock">🔒</button><button class="g" onclick="cfg()" aria-label="Settings">⚙</button></span></div>
 <div class="seg"><button data-m="general" onclick="sm('general')">General Shop</button><button data-m="mobile" onclick="sm('mobile')">Mobile Shop</button></div></header>
 <div id="v"></div>
-<div id="bar"></div>
-<nav><button data-t="sale" onclick="st('sale')"><i>🛒</i>Sale</button><button data-t="prod" onclick="st('prod')"><i>📦</i>Products</button><button data-t="hist" onclick="st('hist')"><i>🧾</i>History</button></nav>
+<div id="cartBar"></div>
+<nav><button data-t="sale" onclick="st('sale')"><i>🛒</i>Sale</button><button data-t="prod" onclick="st('prod')"><i>📦</i>Products</button><button data-t="ud" onclick="st('ud')"><i>📒</i>Udhaar</button><button data-t="hist" onclick="st('hist')"><i>🧾</i>History</button><button data-t="rep" onclick="st('rep')"><i>📊</i>Hisaab</button></nav>
 <div class="ov" id="ov"><div class="sheet" id="sh"></div></div>
-<div id="toast"></div>
+<div id="lk"></div><div id="toastBox"></div>
 <script>
 const $=s=>document.querySelector(s);
 const WAR='Used phone 1 day fault check warranty. No claim touch / camera / LCD. Deduction on return will apply.';
 function load(){let o,fresh=false;try{const r=localStorage.getItem('rpos1');o=r?JSON.parse(r):null}catch(e){}
  if(!o){fresh=true;o={}}
- const d={p:o.p||[],s:o.s||[],n:o.n||1,r:o.r||1,cfg:o.cfg||{name:'My Shop',war:WAR}};
+ const d={p:o.p||[],s:o.s||[],n:o.n||1,r:o.r||1,cfg:o.cfg||{name:'My Shop',war:WAR},u:o.u||[],pin:o.pin||{}};
  if(fresh){[['general','Surf Excel 1kg','Grocery','',650,20],['general','Lays Chips','Snacks','',50,40],['general','Phone Charger','Accessories','',800,15],
   ['mobile','G5 025','Itel','New',24500,5],['mobile','Spark 20','Tecno','Used',33000,3],['mobile','Galaxy A15','Samsung','New',48000,4]]
   .forEach(x=>d.p.push({id:d.n++,m:x[0],n:x[1],c:x[2],k:x[3],pr:x[4],s:x[5]}))}
  return d}
 function save(){try{localStorage.setItem('rpos1',JSON.stringify(S))}catch(e){}}
-let S=load(),mode='general',tab='sale',q='',cart=[],f={n:'',p:'',d:'',pm:'Cash'},tt;
+let S=load(),mode='general',tab='sale',q='',cart=[],f={n:'',p:'',d:'',pm:'Cash',rc:''},tt;
+let role=null,UL=[],rg='d';
 save();
 const pkr=n=>'Rs. '+Math.round(n).toLocaleString('en-US');
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const prod=id=>S.p.find(p=>p.id===id);
 const sub=()=>cart.reduce((a,c)=>a+prod(c.id).pr*c.q,0);
-function toast(m){const e=$('#toast');e.textContent=m;e.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>e.style.opacity=0,1900)}
+function toast(m){const e=$('#toastBox');e.textContent=m;e.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>e.style.opacity=0,1900)}
 function modal(h){$('#sh').innerHTML=h;$('#ov').style.display='flex'}
 function cm(){$('#ov').style.display='none'}
 function sm(m){mode=m;cart=[];q='';render()}
 function st(t){tab=t;render()}
 function render(){
- $('#t').textContent=mode==='mobile'?'Mobile Shop POS':'General Shop POS';
+ $('#shopTitle').textContent=mode==='mobile'?'Mobile Shop POS':'General Shop POS';
  document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
- document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
- $('#v').innerHTML=tab==='sale'?saleV():tab==='prod'?prodV():histV();
- if(tab==='sale')list();bar()}
-function saleV(){return `<input id="q" class="in" placeholder="Naam ya company search karein" value="${esc(q)}" oninput="q=this.value;list()"><div id="list"></div>`}
-function list(){const t=q.toLowerCase();const a=S.p.filter(p=>p.m===mode&&(p.n+' '+p.c).toLowerCase().includes(t));
- $('#list').innerHTML=a.length?a.map(p=>`<div class="row" onclick="add(${p.id})"><div><b>${esc(p.c&&mode==='mobile'?p.c+' '+p.n:p.n)}</b><small>${mode==='mobile'?esc(p.k)+' • ':''}Stock ${p.s}</small></div><b>${pkr(p.pr)}</b></div>`).join(''):'<p class="mt">Koi product nahi. Products tab se add karein.</p>'}
+ document.querySelectorAll('nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===tab);b.style.display=b.dataset.t==='rep'&&role!=='a'?'none':''});
+ $('#v').innerHTML=tab==='sale'?saleV():tab==='prod'?prodV():tab==='ud'?udV():tab==='rep'?repV():histV();
+ if(tab==='sale')renderList();
+ updateCartBar()}
+function saleV(){return `<input id="searchBox" class="in" placeholder="Naam ya company search karein" value="${esc(q)}" oninput="q=this.value;renderList()"><div id="plist"></div>`}
+function renderList(){const el=$('#plist');if(!el)return;const t=q.toLowerCase();const a=S.p.filter(p=>p.m===mode&&(p.n+' '+p.c).toLowerCase().includes(t));
+ el.innerHTML=a.length?a.map(p=>`<div class="row" onclick="add(${p.id})"><div><b>${esc(p.c&&mode==='mobile'?p.c+' '+p.n:p.n)}</b><small>${mode==='mobile'?esc(p.k)+' • ':''}Stock ${p.s}</small></div><b>${pkr(p.pr)}</b></div>`).join(''):'<p class="mt">Koi product nahi. Products tab se add karein.</p>'}
 function add(id){const p=prod(id);const used=cart.filter(c=>c.id===id).reduce((a,c)=>a+c.q,0);
  if(used>=p.s)return toast('Stock khatam hai');
  if(mode==='mobile')cart.push({id,q:1,imei:''});else{const c=cart.find(x=>x.id===id);c?c.q++:cart.push({id,q:1,imei:''})}
- bar();toast(p.n+' add hua')}
-function bar(){const n=cart.reduce((a,c)=>a+c.q,0),b=$('#bar');b.style.display=tab==='sale'&&n?'block':'none';b.innerHTML=`<button class="btn" onclick="openCart()">Cart (${n}) • ${pkr(sub())}</button>`}
-function tot(){const e=$('#tt');if(e)e.textContent=pkr(Math.max(0,sub()-(+f.d||0)))}
-function qty(i,d){const c=cart[i],p=prod(c.id),n=c.q+d;if(n<1)return;if(n>p.s)return toast('Stock sirf '+p.s+' hai');c.q=n;openCart();bar()}
-function rm(i){cart.splice(i,1);openCart();bar()}
+ updateCartBar();toast(p.n+' add hua')}
+function updateCartBar(){const n=cart.reduce((a,c)=>a+c.q,0),b=$('#cartBar');b.style.display=tab==='sale'&&n?'block':'none';b.innerHTML=`<button class="btn" onclick="openCart()">Cart (${n}) • ${pkr(sub())}</button>`}
+function tot(){const e=$('#totalEl');if(e)e.textContent=pkr(Math.max(0,sub()-(+f.d||0)))}
+function qty(i,d){const c=cart[i],p=prod(c.id),n=c.q+d;if(n<1)return;if(n>p.s)return toast('Stock sirf '+p.s+' hai');c.q=n;openCart();updateCartBar()}
+function rm(i){cart.splice(i,1);openCart();updateCartBar()}
 function openCart(){
  if(!cart.length)return cm();
  const m=mode==='mobile';
  modal(`<h3>Cart / Checkout</h3>`+cart.map((c,i)=>{const p=prod(c.id);return `<div class="card"><div class="sp"><b>${esc(p.n)}</b><a onclick="rm(${i})">✕</a></div><small>${pkr(p.pr)} × ${c.q}</small>`+
-  (m?`<input class="in" inputmode="numeric" maxlength="15" placeholder="IMEI No. (15 digits)" value="${esc(c.imei)}" oninput="this.value=this.value.replace(/\\D/g,'');cart[${i}].imei=this.value">`:
+  (m?`<input class="in" inputmode="numeric" maxlength="16" placeholder="IMEI No. (15-16 digits)" value="${esc(c.imei)}" oninput="this.value=this.value.replace(/\\D/g,'');cart[${i}].imei=this.value">`:
   `<div class="qty"><button onclick="qty(${i},-1)">−</button><b>${c.q}</b><button onclick="qty(${i},1)">+</button></div>`)+`</div>`}).join('')+
   `<input class="in" placeholder="Customer naam${m?' (zaroori)':' (optional)'}" value="${esc(f.n)}" oninput="f.n=this.value">
   <input class="in" inputmode="tel" placeholder="Mobile No." value="${esc(f.p)}" oninput="f.p=this.value">
-  <input class="in" inputmode="numeric" placeholder="Discount (PKR)" value="${esc(f.d)}" oninput="f.d=this.value;tot()">
-  <select class="in" onchange="f.pm=this.value">${['Cash','Card','Easypaisa','JazzCash','Bank Transfer'].map(x=>`<option${x===f.pm?' selected':''}>${x}</option>`).join('')}</select>
-  <div class="tot"><b>Total</b><b id="tt"></b></div>
+  <input class="in" inputmode="numeric" placeholder="Discount (PKR)" value="${esc(f.d)}" oninput="f.d=this.value;tot()"><input class="in" inputmode="numeric" placeholder="Abhi kitne diye? (sirf Udhaar mein)" value="${esc(f.rc)}" oninput="f.rc=this.value">
+  <select class="in" onchange="f.pm=this.value">${['Cash','Card','Easypaisa','JazzCash','Bank Transfer','Udhaar'].map(x=>`<option${x===f.pm?' selected':''}>${x}</option>`).join('')}</select>
+  <div class="tot"><b>Total</b><b id="totalEl"></b></div>
   <button class="btn" onclick="done()">Sale mukammal karein</button><button class="btn gh" onclick="cm()">Wapas</button>`);tot()}
 function done(){
  const m=mode==='mobile';
  if(m&&!f.n.trim())return toast('Customer ka naam likhein');
- if(m){const seen=new Set();for(const c of cart){if(!/^\d{15}$/.test(c.imei))return toast(prod(c.id).n+': IMEI 15 digits ka ho');if(seen.has(c.imei))return toast('IMEI dobara likha hai');seen.add(c.imei)}}
+ if(m){const seen=new Set();for(const c of cart){if(!/^\d{15,16}$/.test(c.imei))return toast(prod(c.id).n+': IMEI 15 ya 16 digits ka ho');if(seen.has(c.imei))return toast('IMEI dobara likha hai');seen.add(c.imei)}}
  const d=+f.d||0,sb=sub();if(d<0||d>sb)return toast('Discount sahi nahi');
- const it=cart.map(c=>{const p=prod(c.id);p.s-=c.q;return{n:p.n,c:p.c,k:p.k,q:c.q,pr:p.pr,imei:c.imei}});
- const s={id:S.r++,d:Date.now(),m:mode,cn:f.n.trim(),cp:f.p.trim(),dis:d,tot:sb-d,pm:f.pm,it};
- S.s.unshift(s);save();cart=[];f={n:'',p:'',d:'',pm:'Cash'};render();rcpt(s)}
+ const ud=f.pm==='Udhaar',rc=ud?(+f.rc||0):0;
+ if(ud&&(!f.n.trim()||!f.p.trim()))return toast('Udhaar ke liye naam aur mobile zaroori');
+ if(rc<0||rc>sb-d)return toast('Diye hue paise sahi nahi');
+ const it=cart.map(c=>{const p=prod(c.id);p.s-=c.q;return{n:p.n,c:p.c,k:p.k,q:c.q,pr:p.pr,co:p.co||0,imei:c.imei}});
+ const s={id:S.r++,d:Date.now(),m:mode,cn:f.n.trim(),cp:f.p.trim(),dis:d,tot:sb-d,pm:f.pm,due:ud?sb-d-rc:0,rc,it};
+ S.s.unshift(s);if(s.due>0)S.u.push({d:s.d,k:ck(s.cn,s.cp),n:s.cn,p:s.cp,a:s.due,t:'sale',sid:s.id});save();cart=[];f={n:'',p:'',d:'',pm:'Cash',rc:''};render();rcpt(s)}
 function rcpt(s){
  const m=s.m==='mobile',c=S.cfg,dt=new Date(s.d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
  const L=s.it.map(i=>m?`<div class="tot"><span><b>${esc(i.c)} ${esc(i.n)}</b> (${esc(i.k)})<small>IMEI: ${esc(i.imei)}</small></span><b>${pkr(i.pr)}</b></div>`:`<div class="tot"><span>${esc(i.n)} × ${i.q}</span><b>${pkr(i.pr*i.q)}</b></div>`).join('');
- const t=`${c.name}\nReceipt #${s.id} | ${dt}\n`+(s.cn?`Name: ${s.cn}\n`:'')+(s.cp?`Mobile: ${s.cp}\n`:'')+s.it.map(i=>m?`${i.c} ${i.n} (${i.k}) IMEI ${i.imei} - ${pkr(i.pr)}`:`${i.n} x${i.q} - ${pkr(i.pr*i.q)}`).join('\n')+`\n${s.dis?'Discount: '+pkr(s.dis)+'\n':''}Total: ${pkr(s.tot)} (${s.pm})`+(m?`\n${c.war}`:'');
+ const t=`${c.name}\nReceipt #${s.id} | ${dt}\n`+(s.cn?`Name: ${s.cn}\n`:'')+(s.cp?`Mobile: ${s.cp}\n`:'')+s.it.map(i=>m?`${i.c} ${i.n} (${i.k}) IMEI ${i.imei} - ${pkr(i.pr)}`:`${i.n} x${i.q} - ${pkr(i.pr*i.q)}`).join('\n')+`\n${s.dis?'Discount: '+pkr(s.dis)+'\n':''}Total: ${pkr(s.tot)} (${s.pm})`+(s.due?`\nBaqi udhaar: ${pkr(s.due)}`:'')+(m?`\n${c.war}`:'');
  let ph=(s.cp||'').replace(/\D/g,'');if(ph.startsWith('0'))ph='92'+ph.slice(1);
  modal(`<div class="rc"><h3>${esc(c.name)}</h3><div class="tot"><span>Receipt #${s.id}</span><span>${dt}</span></div><hr>`+(s.cn?`<div>Name: <b>${esc(s.cn)}</b></div>`:'')+(s.cp?`<div>Mobile: ${esc(s.cp)}</div>`:'')+`<hr>${L}<hr>`+
-  (s.dis?`<div class="tot"><span>Discount</span><span>- ${pkr(s.dis)}</span></div>`:'')+`<div class="tot"><b>Total (${esc(s.pm)})</b><b>${pkr(s.tot)}</b></div>`+
+  (s.dis?`<div class="tot"><span>Discount</span><span>- ${pkr(s.dis)}</span></div>`:'')+`<div class="tot"><b>Total (${esc(s.pm)})</b><b>${pkr(s.tot)}</b></div>${s.due?`<div class="tot"><span>Diye</span><span>${pkr(s.rc)}</span></div><div class="tot"><b>Baqi (Udhaar)</b><b>${pkr(s.due)}</b></div>`:''}`+
   (m?`<hr><small>${esc(c.war)}</small><br><small>Sign: ____________</small>`:'')+`</div>
   <a class="btn" target="_blank" href="https://wa.me/${ph}?text=${encodeURIComponent(t)}">WhatsApp pe bhejein</a><button class="btn gh" onclick="cm()">Band karein</button>`)}
 function prodV(){const a=S.p.filter(p=>p.m===mode);
- return `<button class="btn" onclick="pf()">+ Naya Product</button>`+(a.length?a.map(p=>`<div class="row" onclick="pf(${p.id})"><div><b>${esc(p.n)}</b><small>${esc(p.c)}${p.k?' • '+esc(p.k):''}</small></div><div class="r"><b>${pkr(p.pr)}</b><small class="${p.s<=3?'lo':''}">Stock ${p.s}</small></div></div>`).join(''):'<p class="mt">Abhi koi product nahi.</p>')}
-function pf(id){const m=mode==='mobile',p=id?prod(id):{n:'',c:'',k:'New',pr:'',s:''};
+ return (role==='a'?`<button class="btn" onclick="pf()">+ Naya Product</button>`:'')+(a.length?a.map(p=>`<div class="row" onclick="pf(${p.id})"><div><b>${esc(p.n)}</b><small>${esc(p.c)}${p.k?' • '+esc(p.k):''}</small></div><div class="r"><b>${pkr(p.pr)}</b><small class="${p.s<=3?'lo':''}">Stock ${p.s}</small></div></div>`).join(''):'<p class="mt">Abhi koi product nahi.</p>')}
+function pf(id){if(role!=='a')return toast('Sirf Admin product badal sakta hai');const m=mode==='mobile',p=id?prod(id):{n:'',c:'',k:'New',pr:'',s:''};
  modal(`<h3>${id?'Product Edit':'Naya Product'}</h3><input id="fn" class="in" placeholder="${m?'Model (e.g. G5 025)':'Product naam'}" value="${esc(p.n)}"><input id="fc" class="in" placeholder="${m?'Company (e.g. Itel)':'Category'}" value="${esc(p.c)}">`+
   (m?`<select id="fk" class="in"><option${p.k==='New'?' selected':''}>New</option><option${p.k==='Used'?' selected':''}>Used</option></select>`:'')+
-  `<input id="fp" class="in" inputmode="numeric" placeholder="Sale price (PKR)" value="${p.pr}"><input id="fs" class="in" inputmode="numeric" placeholder="Stock quantity" value="${p.s}">
+  `<input id="fp" class="in" inputmode="numeric" placeholder="Sale price (PKR)" value="${p.pr}"><input id="fo" class="in" inputmode="numeric" placeholder="Cost price (PKR) - profit ke liye" value="${p.co||''}"><input id="fs" class="in" inputmode="numeric" placeholder="Stock quantity" value="${p.s}">
   <button class="btn" onclick="ps(${id||0})">Save</button>`+(id?`<button class="btn bad" onclick="pd(${id})">Delete</button>`:'')+`<button class="btn gh" onclick="cm()">Cancel</button>`)}
 function ps(id){const n=$('#fn').value.trim(),pr=+$('#fp').value,s=parseInt($('#fs').value,10);
  if(!n)return toast('Naam likhein');if(!(pr>=0)||$('#fp').value==='')return toast('Price sahi likhein');if(!(s>=0))return toast('Stock sahi likhein');
- const o={n,c:$('#fc').value.trim(),k:mode==='mobile'?$('#fk').value:'',pr,s};
+ const o={n,c:$('#fc').value.trim(),k:mode==='mobile'?$('#fk').value:'',pr,co:+$('#fo').value||0,s};
  if(id)Object.assign(prod(id),o);else S.p.push({id:S.n++,m:mode,...o});
  save();cart=cart.filter(c=>prod(c.id));cm();render()}
 function pd(id){S.p=S.p.filter(p=>p.id!==id);cart=cart.filter(c=>c.id!==id);save();cm();render()}
 function histV(){const a=S.s.filter(s=>s.m===mode),t0=new Date().setHours(0,0,0,0),td=a.filter(s=>s.d>=t0);
  return `<div class="sum"><small>Aaj ki sale (${td.length})</small><b style="font-size:22px">${pkr(td.reduce((x,s)=>x+s.tot,0))}</b></div>`+
  (a.length?a.map(s=>`<div class="row" onclick="rcpt(S.s.find(x=>x.id===${s.id}))"><div><b>#${s.id} ${esc(s.cn||'Walk-in')}</b><small>${new Date(s.d).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})} • ${esc(s.pm)}</small></div><b>${pkr(s.tot)}</b></div>`).join(''):'<p class="mt">Abhi tak koi sale nahi hui.</p>')}
-function cfg(){modal(`<h3>Settings</h3><input id="cn" class="in" placeholder="Shop ka naam" value="${esc(S.cfg.name)}"><textarea id="cw" class="in" rows="4" placeholder="Warranty text">${esc(S.cfg.war)}</textarea><button class="btn" onclick="cs()">Save</button><button class="btn gh" onclick="cm()">Cancel</button>`)}
+function cfg(){if(role!=='a')return toast('Sirf Admin');modal(`<h3>Settings</h3><input id="cn" class="in" placeholder="Shop ka naam" value="${esc(S.cfg.name)}"><textarea id="cw" class="in" rows="4" placeholder="Warranty text">${esc(S.cfg.war)}</textarea><button class="btn" onclick="cs()">Save</button><hr><input id="pa1" class="in" type="password" inputmode="numeric" placeholder="Naya Admin PIN (4-8 digits)"><input id="pc1" class="in" type="password" inputmode="numeric" placeholder="Cashier PIN (4-8 digits)"><button class="btn gh" onclick="sp()">PIN save karein</button><button class="btn gh" onclick="bk()">Backup / Restore</button><button class="btn gh" onclick="cm()">Band karein</button>`)}
 function cs(){S.cfg.name=$('#cn').value.trim()||'My Shop';S.cfg.war=$('#cw').value.trim();save();cm();toast('Save ho gaya')}
-render();
+const hs=p=>{let h=5381;const s='rpos'+p;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return String(h)};
+function lock(){role=null;cm();const k=$('#lk');k.style.display='flex';
+ if(!S.pin.a){k.innerHTML=`<h2>Admin PIN banayein</h2><small>4 se 8 digits. Ye PIN yaad rakhein.</small><input id="p1" class="in" type="password" inputmode="numeric" placeholder="Naya PIN"><button class="btn" onclick="setA()">Shuru karein</button>`;return}
+ k.innerHTML=`<h2>Royal POS</h2><select id="rl" class="in"><option value="a">Admin</option><option value="c">Cashier</option></select><input id="p1" class="in" type="password" inputmode="numeric" placeholder="PIN"><button class="btn" onclick="go()">Login</button>`}
+function setA(){const v=$('#p1').value;if(!/^\d{4,8}$/.test(v))return toast('PIN 4 se 8 digits ka ho');S.pin.a=hs(v);save();role='a';enter()}
+function go(){const r=$('#rl').value,v=$('#p1').value;if(!S.pin[r])return toast('Cashier PIN set nahi hai');if(S.pin[r]!==hs(v))return toast('Galat PIN');role=r;enter()}
+function enter(){$('#lk').style.display='none';tab='sale';render()}
+function sp(){const a=$('#pa1').value,c=$('#pc1').value;if(a&&!/^\d{4,8}$/.test(a))return toast('Admin PIN 4-8 digits');if(c&&!/^\d{4,8}$/.test(c))return toast('Cashier PIN 4-8 digits');if(a)S.pin.a=hs(a);if(c)S.pin.c=hs(c);save();cm();toast('PIN save ho gaya')}
+const ck=(n,p)=>(p||'').replace(/\D/g,'')||(n||'').toLowerCase().trim();
+function bal(){const m={};S.u.forEach(e=>{const o=m[e.k]||(m[e.k]={k:e.k,n:e.n,p:e.p,b:0});o.b+=e.a;if(e.n)o.n=e.n});return Object.values(m)}
+function udV(){const a=bal().filter(x=>x.b>0).sort((x,y)=>y.b-x.b);UL=a;
+ return `<div class="sum"><small>Kul udhaar baqi (${a.length} log)</small><b style="font-size:22px">${pkr(a.reduce((s,x)=>s+x.b,0))}</b></div>`+(a.length?a.map((x,i)=>`<div class="row" onclick="cu(${i})"><div><b>${esc(x.n)}</b><small>${esc(x.p)}</small></div><b>${pkr(x.b)}</b></div>`).join(''):'<p class="mt">Koi udhaar baqi nahi.</p>')}
+function cu(i){const x=UL[i],es=S.u.filter(e=>e.k===x.k).sort((a,b)=>b.d-a.d);
+ modal(`<h3>${esc(x.n)}</h3><small>${esc(x.p)}</small><div class="tot"><b>Baqi</b><b>${pkr(x.b)}</b></div><input id="pa" class="in" inputmode="numeric" placeholder="Paise wasool hue (PKR)"><button class="btn" onclick="pay(${i})">Wasooli darj karein</button>`+es.map(e=>`<div class="row"><div><b>${e.a>0?'Udhaar':'Wasooli'}</b><small>${new Date(e.d).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})}${e.sid?' • Receipt #'+e.sid:''}</small></div><b>${pkr(Math.abs(e.a))}</b></div>`).join('')+`<button class="btn gh" onclick="cm()">Band karein</button>`)}
+function pay(i){const x=UL[i],a=+$('#pa').value;if(!(a>0))return toast('Amount likhein');if(a>x.b)return toast('Baqi se zyada nahi');S.u.push({d:Date.now(),k:x.k,n:x.n,p:x.p,a:-a,t:'pay'});save();cm();render();toast('Wasooli darj ho gayi')}
+function repV(){
+ if(role!=='a')return '<p class="mt">Report sirf Admin dekh sakta hai.</p>';
+ const n=new Date(),from=rg==='d'?new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime():rg==='m'?new Date(n.getFullYear(),n.getMonth(),1).getTime():0;
+ const a=S.s.filter(s=>s.m===mode&&s.d>=from),sumBy=g=>a.reduce((x,s)=>x+g(s),0);
+ const sale=sumBy(s=>s.tot),dis=sumBy(s=>s.dis),gain=sumBy(s=>s.it.reduce((y,i)=>y+(i.pr-(i.co||0))*i.q,0)-s.dis);
+ const pm={},tp={};a.forEach(s=>{pm[s.pm]=(pm[s.pm]||0)+s.tot;s.it.forEach(i=>{const o=tp[i.n]||(tp[i.n]={q:0});o.q+=i.q})});
+ const R=(l,v)=>`<div class="row"><span>${l}</span><b>${v}</b></div>`;
+ return `<div style="display:flex;gap:6px">${[['d','Aaj'],['m','Is mahine'],['a','Sab']].map(x=>`<button onclick="rg='${x[0]}';render()" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--bd);font:inherit;${rg===x[0]?'background:var(--pr);color:var(--on)':'background:var(--cd);color:var(--tx)'}">${x[1]}</button>`).join('')}</div>`+
+ R('Kul sale',pkr(sale))+R('Munafa (profit)',pkr(gain))+R('Receipts',a.length)+R('Discount diya',pkr(dis))+R('Udhaar baqi (sab)',pkr(bal().reduce((x,y)=>x+Math.max(0,y.b),0)))+
+ `<small style="margin-top:10px">Payment ke hisaab se</small>`+(Object.entries(pm).map(x=>R(esc(x[0]),pkr(x[1]))).join('')||'<p class="mt">Koi sale nahi.</p>')+
+ `<small style="margin-top:10px">Sab se zyada bikne wale</small>`+Object.entries(tp).sort((x,y)=>y[1].q-x[1].q).slice(0,5).map(x=>R(esc(x[0]),x[1].q+' pcs')).join('')+
+ `<small style="margin-top:10px">Profit tabhi sahi aata hai jab Products mein cost price likha ho.</small>`}
+function bk(){modal(`<h3>Backup / Restore</h3><small>Backup: neeche ka poora text Copy karke WhatsApp (khud ko) ya Notes mein save karein.</small><textarea id="bt" class="in" rows="6" readonly>${esc(JSON.stringify(S))}</textarea><button class="btn" onclick="cp()">Copy karein</button><hr><small>Restore: purana backup text yahan paste karein. Maujooda data badal jayega.</small><textarea id="rt" class="in" rows="4" placeholder="Backup text paste karein"></textarea><button class="btn bad" onclick="rs()">Restore karein</button><button class="btn gh" onclick="cm()">Band karein</button>`)}
+function cp(){const t=$('#bt');t.select();const ok=()=>toast('Copy ho gaya'),fb=()=>{try{document.execCommand('copy');ok()}catch(e){toast('Text select karke khud copy karein')}};try{navigator.clipboard.writeText(t.value).then(ok,fb)}catch(e){fb()}}
+function rs(){try{const o=JSON.parse($('#rt').value);if(!Array.isArray(o.p)||!Array.isArray(o.s))throw 0;localStorage.setItem('rpos1',JSON.stringify(o));S=load();cart=[];cm();render();toast('Restore ho gaya')}catch(e){toast('Backup text sahi nahi')}}
+lock();render();
 </script></body></html>
